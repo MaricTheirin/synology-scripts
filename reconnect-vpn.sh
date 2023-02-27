@@ -7,7 +7,7 @@
 #       README:  https://github.com/ianharrier/synology-scripts
 #
 #      AUTHORS:  Ian Harrier, Deac Karns, Michael Lake, mchalandon
-#      VERSION:  1.5.0
+#      VERSION:  1.4.0
 #      LICENSE:  MIT License
 #===============================================================================
 
@@ -17,28 +17,17 @@
 
 # VPN_PROFILE_NAME : The VPN "Profile Name" (from DSM) you want to reconnect, in case multiple VPN profiles exist.
 # - Note: Leaving this blank requires that only one VPN profile is configured in DSM.
-VPN_PROFILE_NAME=
+VPN_PROFILE_NAME=PIA
 
 # VPN_CHECK_METHOD : How to check if the VPN connection is alive. Options:
 # - "dsm_status" (default) : assume OK if Synology DSM reports the VPN connection is alive
 # - "gateway_ping" : assume OK if the default gateway (i.e. VPN server) responds to ICMP ping
 # - "custom_ping" : assume OK if CUSTOM_PING_ADDRESS (configured below) responds to ICMP ping
 VPN_CHECK_METHOD=dsm_status
+REBOOT_IF_CONNECTED=1
 
 # CUSTOM_PING_ADDRESS : IP address or hostname to ping when VPN_CHECK_METHOD=custom_ping
 CUSTOM_PING_ADDRESS=example.com
-
-# NO_RECONNECT_SCRIPT : Run this script if a reconnection is not needed
-NO_RECONNECT_SCRIPT=
-
-# PRE_RECONNECT_SCRIPT : Run this script before a reconnection is attempted
-PRE_RECONNECT_SCRIPT=
-
-# POST_SUCCESS_SCRIPT : Run this script after a successful reconnection
-POST_SUCCESS_SCRIPT=
-
-# POST_FAILURE_SCRIPT : Run this script after a failed reconnection
-POST_FAILURE_SCRIPT=
 
 #-------------------------------------------------------------------------------
 #  Process VPN config files
@@ -126,13 +115,8 @@ function check_vpn_connection() {
 	fi
 }
 
-if check_vpn_connection; then
-	if [[ -x $NO_RECONNECT_SCRIPT ]]; then
-		echo "[I] Reconnect is not needed. Running no-reconnect script \"$NO_RECONNECT_SCRIPT\", then exiting..."
-		"$NO_RECONNECT_SCRIPT"
-	else
-		echo "[I] Reconnect is not needed. Exiting..."
-	fi
+if check_vpn_connection && [! $REBOOT_IF_CONNECTED]; then
+	echo "[I] Reconnect is not needed. Exiting..."
 	exit 0
 fi
 
@@ -145,19 +129,12 @@ if [[ $PROFILE_RECONNECT != "yes" ]]; then
 	exit 3
 fi
 
-if [[ -x $PRE_RECONNECT_SCRIPT ]]; then
-	echo "[I] Running pre-reconnect script \"$PRE_RECONNECT_SCRIPT\"..."
-	"$PRE_RECONNECT_SCRIPT"
-fi
-
 echo "[I] Attempting to reconnect..."
 /usr/syno/bin/synovpnc kill_client
 sleep 20
-cat > /usr/syno/etc/synovpnclient/vpnc_connecting <<EOF
-conf_id=$PROFILE_ID
-conf_name=$PROFILE_NAME
-proto=$PROFILE_PROTOCOL
-EOF
+echo conf_id=$PROFILE_ID > /usr/syno/etc/synovpnclient/vpnc_connecting
+echo conf_name=$PROFILE_NAME >> /usr/syno/etc/synovpnclient/vpnc_connecting
+echo proto=$PROFILE_PROTOCOL >> /usr/syno/etc/synovpnclient/vpnc_connecting
 /usr/syno/bin/synovpnc connect --id=$PROFILE_ID
 sleep 20
 
@@ -166,19 +143,9 @@ sleep 20
 #-------------------------------------------------------------------------------
 
 if check_vpn_connection; then
-	if [[ -x $POST_SUCCESS_SCRIPT ]]; then
-		echo "[I] VPN successfully reconnected. Running post-success script \"$POST_SUCCESS_SCRIPT\", then exiting..."
-		"$POST_SUCCESS_SCRIPT"
-	else
-		echo "[I] VPN successfully reconnected. Exiting..."
-	fi
+	echo "[I] VPN successfully reconnected. Exiting..."
 	exit 1
 else
-	if [[ -x $POST_FAILURE_SCRIPT ]]; then
-		echo "[I] VPN failed to reconnect. Running post-failure script \"$POST_FAILURE_SCRIPT\", then exiting..."
-		"$POST_FAILURE_SCRIPT"
-	else
-		echo "[E] VPN failed to reconnect. Exiting..."
-	fi
+	echo "[E] VPN failed to reconnect. Exiting..."
 	exit 2
 fi
